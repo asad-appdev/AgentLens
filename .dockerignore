@@ -1,0 +1,63 @@
+# ==========================================
+# AgentLens — .dockerignore
+# ==========================================
+
+# Dependencies & Build Cache
+node_modules/
+.npm/
+.yarn/
+.pnp
+.pnp.js
+.cache/
+.vite/
+
+# Build & Dist
+dist/
+build/
+out/
+apps/backend/dist/
+apps/frontend/dist/
+packages/shared/dist/
+*.tsbuildinfo
+
+# Native Executables & App Bundles
+AgentLens Launcher.app/
+*.exe
+*.dmg
+*.msi
+*.pkg
+*.app
+
+# Local Database, Backups & Dynamic State
+data/
+backups/
+exports/
+*.sqlite
+*.sqlite3
+*.db
+*.bak.json
+
+# Logs & PIDs
+logs/
+*.log
+*.pid
+.agentlens-runtime.pid
+
+# Environment & Secrets
+.env
+.env.*
+!.env.example
+
+# Version Control & IDE
+.git/
+.gitignore
+.dockerignore
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# Archives
+Archive.zip
+*.zip
+*.tar.gz

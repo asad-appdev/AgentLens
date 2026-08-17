@@ -1,0 +1,27 @@
+{
+  "name": "network-monitor-monorepo",
+  "version": "1.0.0",
+  "private": true,
+  "description": "macOS Real-Time Network Monitor Dashboard",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "dev": "concurrently -k -p \"[{name}]\" -n \"backend,frontend\" -c \"blue.bold,cyan.bold\" \"npm run dev --workspace=@network-monitor/backend\" \"npm run dev --workspace=@network-monitor/frontend\"",
+    "build": "npm run build --workspace=@network-monitor/shared && npm run build --workspace=@network-monitor/backend && npm run build --workspace=@network-monitor/frontend",
+    "start": "node apps/backend/dist/index.js",
+    "package": "bash scripts/package-macos.sh",
+    "diagnostics": "curl -s http://127.0.0.1:3000/api/diagnostics | json_pp",
+    "firewall:status": "pfctl -a com.networkmonitor.app -sr",
+    "test": "npm run test --workspaces --if-present",
+    "lint": "npm run lint --workspaces --if-present",
+    "launcher": "bash launcher/build-launcher.sh && open \"AgentLens Launcher.app\"",
+    "launcher:build": "bash launcher/build-launcher.sh",
+    "clean": "rm -rf node_modules apps/*/node_modules packages/*/node_modules apps/*/dist packages/*/dist dist"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2",
+    "typescript": "^5.7.3"
+  }
+}

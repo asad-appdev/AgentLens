@@ -1,0 +1,115 @@
+# ==========================================
+# AgentLens — Master .gitignore
+# ==========================================
+
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+.npm
+.yarn/cache
+.yarn/unplugged
+.yarn/build-state.yml
+.yarn/install-state.gz
+
+# Build Outputs & Bundles
+dist/
+build/
+out/
+apps/backend/dist/
+apps/frontend/dist/
+packages/shared/dist/
+*.tsbuildinfo
+
+# Native Executables & App Bundles
+AgentLens Launcher.app/
+*.exe
+*.dmg
+*.msi
+*.pkg
+*.app
+launcher/build/
+launcher/*.o
+launcher/bin/
+
+# Archives & Temporary Artifacts
+Archive.zip
+*.zip
+*.tar.gz
+*.tar.bz2
+*.tgz
+*.rar
+*.7z
+
+# Local Database, State & Dynamic Backups
+data/
+backups/
+exports/
+*.sqlite
+*.sqlite3
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+*.bak.json
+
+# Process IDs & Runtime Runfiles
+*.pid
+.agentlens-runtime.pid
+pids/
+
+# Runtime Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# Environment & Secrets (Preserve .env.example)
+.env
+.env.local
+.env.development
+.env.development.local
+.env.test
+.env.test.local
+.env.production
+.env.production.local
+!.env.example
+
+# Test Coverage & Tooling Cache
+coverage/
+.nyc_output/
+.vitest/
+.cache/
+.vite/
+.eslintcache
+
+# Operating System Files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+[Dd]esktop.ini
+$RECYCLE.BIN/
+
+# IDE & Editor Configs
+.idea/
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+*.sublime-workspace
+*.sublime-project
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.swp
+*.swo
+*~
