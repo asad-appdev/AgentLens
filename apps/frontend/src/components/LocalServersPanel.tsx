@@ -465,6 +465,20 @@ export const LocalServersPanel: React.FC<LocalServersPanelProps> = ({
                   </tr>
                 );
               })
+            ) : isLoading ? (
+              <tr>
+                <td colSpan={8}>
+                  <div className="empty-state-box">
+                    <RefreshCw size={30} className="spin" style={{ color: 'var(--accent-cyan)', opacity: 0.8, marginBottom: '8px' }} />
+                    <div className="empty-title">
+                      Discovering Local Listening Servers...
+                    </div>
+                    <p className="empty-desc">
+                      Scanning local loopback interfaces and active listening sockets...
+                    </p>
+                  </div>
+                </td>
+              </tr>
             ) : (
               <tr>
                 <td colSpan={8}>

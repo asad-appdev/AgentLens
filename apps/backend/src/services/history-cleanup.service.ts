@@ -32,8 +32,8 @@ export class HistoryCleanupService {
       this.performCleanup();
     }, intervalMs);
 
-    // Initial check
-    setTimeout(() => this.performCleanup(), 10000);
+    // Initial check promptly on startup
+    setTimeout(() => this.performCleanup(), 1000);
   }
 
   public stop(): void {

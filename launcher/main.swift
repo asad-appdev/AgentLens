@@ -396,44 +396,150 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMe
     
     func stopServers() {
         stopServersInternal()
-        logToUI(source: "system", text: "All services stopped.")
-        checkStatus()
+        logToUI(source: "system", text: "Stopping all active processes and releasing ports...")
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            Thread.sleep(forTimeInterval: 0.3)
+            DispatchQueue.main.async {
+                self?.logToUI(source: "system", text: "All services stopped.")
+                self?.checkStatus()
+            }
+        }
     }
     
     func stopServersInternal() {
-        if let bp = backendProcess, bp.isRunning {
-            bp.terminate()
-            killProcessTree(pid: bp.processIdentifier)
+        // 1. Kill backend process tree before terminating
+        if let bp = backendProcess {
+            let pid = bp.processIdentifier
+            killProcessTree(pid: pid)
+            if bp.isRunning {
+                bp.terminate()
+            }
             backendProcess = nil
             backendPid = 0
         }
-        if let fp = frontendProcess, fp.isRunning {
-            fp.terminate()
-            killProcessTree(pid: fp.processIdentifier)
+        
+        // 2. Kill frontend process tree before terminating
+        if let fp = frontendProcess {
+            let pid = fp.processIdentifier
+            killProcessTree(pid: pid)
+            if fp.isRunning {
+                fp.terminate()
+            }
             frontendProcess = nil
             frontendPid = 0
         }
+        
+        // 3. Ensure any processes listening on the backend and frontend ports are fully terminated
+        killPortProcesses(port: backendPort)
+        killPortProcesses(port: frontendPort)
+        
+        // 4. Clean up any lingering node/tsx/vite child processes associated with the project root
+        killLingeringProjectProcesses()
     }
     
     func killProcessTree(pid: Int32) {
-        guard pid > 0 else { return }
+        guard pid > 1, pid != ProcessInfo.processInfo.processIdentifier else { return }
+        let myPid = ProcessInfo.processInfo.processIdentifier
+        let script = """
+        my_pid=\(myPid)
+        kill_recursive() {
+            local parent=$1
+            [ -z "$parent" ] || [ "$parent" -le 1 ] || [ "$parent" -eq "$my_pid" ] && return
+            local children=$(pgrep -P "$parent" 2>/dev/null || true)
+            for child in $children; do
+                kill_recursive "$child"
+            done
+            kill -15 "$parent" 2>/dev/null || true
+            kill -9 "$parent" 2>/dev/null || true
+        }
+        kill_recursive \(pid)
+        """
         let p = Process()
         p.launchPath = "/bin/bash"
-        p.arguments = ["-c", "pkill -P \(pid) 2>/dev/null || true; kill -9 \(pid) 2>/dev/null || true"]
+        p.arguments = ["-c", script]
+        try? p.run()
+        p.waitUntilExit()
+    }
+    
+    func killPortProcesses(port: Int) {
+        guard port > 0 else { return }
+        let myPid = ProcessInfo.processInfo.processIdentifier
+        let script = """
+        my_pid=\(myPid)
+        kill_recursive() {
+            local parent=$1
+            [ -z "$parent" ] || [ "$parent" -le 1 ] || [ "$parent" -eq "$my_pid" ] && return
+            local children=$(pgrep -P "$parent" 2>/dev/null || true)
+            for child in $children; do
+                kill_recursive "$child"
+            done
+            kill -15 "$parent" 2>/dev/null || true
+            kill -9 "$parent" 2>/dev/null || true
+        }
+        
+        pids=$(lsof -ti :\(port) -sTCP:LISTEN 2>/dev/null || true)
+        for pid in $pids; do
+            [ -z "$pid" ] || [ "$pid" -le 1 ] || [ "$pid" -eq "$my_pid" ] && continue
+            ppid=$(ps -o ppid= -p "$pid" 2>/dev/null | tr -d ' ' || true)
+            if [ -n "$ppid" ] && [ "$ppid" -gt 1 ] && [ "$ppid" -ne "$my_pid" ]; then
+                gppid=$(ps -o ppid= -p "$ppid" 2>/dev/null | tr -d ' ' || true)
+                if [ -n "$gppid" ] && [ "$gppid" -gt 1 ] && [ "$gppid" -ne "$my_pid" ]; then
+                    kill_recursive "$gppid"
+                fi
+                kill_recursive "$ppid"
+            fi
+            kill_recursive "$pid"
+        done
+        """
+        let p = Process()
+        p.launchPath = "/bin/bash"
+        p.arguments = ["-c", script]
+        try? p.run()
+        p.waitUntilExit()
+    }
+    
+    func killLingeringProjectProcesses() {
+        let myPid = ProcessInfo.processInfo.processIdentifier
+        let escapedRoot = projectRoot.replacingOccurrences(of: "'", with: "'\\''")
+        let script = """
+        my_pid=\(myPid)
+        root='\(escapedRoot)'
+        
+        kill_recursive() {
+            local parent=$1
+            [ -z "$parent" ] || [ "$parent" -le 1 ] || [ "$parent" -eq "$my_pid" ] && return
+            local children=$(pgrep -P "$parent" 2>/dev/null || true)
+            for child in $children; do
+                kill_recursive "$child"
+            done
+            kill -15 "$parent" 2>/dev/null || true
+            kill -9 "$parent" 2>/dev/null || true
+        }
+        
+        ps -eo pid,ppid,command 2>/dev/null | grep "$root" | grep -E "tsx|vite|node_modules" | grep -v grep | awk '{print $1}' | while read -r p; do
+            if [ -n "$p" ] && [ "$p" -gt 1 ] && [ "$p" -ne "$my_pid" ]; then
+                kill_recursive "$p"
+            fi
+        done
+        """
+        let p = Process()
+        p.launchPath = "/bin/bash"
+        p.arguments = ["-c", script]
         try? p.run()
         p.waitUntilExit()
     }
     
     func freePorts(ports: [Int]) {
         for port in ports {
-            let p = Process()
-            p.launchPath = "/bin/bash"
-            p.arguments = ["-c", "lsof -ti :\(port) | xargs kill -9 2>/dev/null || true"]
-            try? p.run()
-            p.waitUntilExit()
+            killPortProcesses(port: port)
             logToUI(source: "system", text: "Freed port :\(port)")
         }
-        checkStatus()
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            Thread.sleep(forTimeInterval: 0.2)
+            DispatchQueue.main.async {
+                self?.checkStatus()
+            }
+        }
     }
     
     func pingHealth(url: String) -> Bool {

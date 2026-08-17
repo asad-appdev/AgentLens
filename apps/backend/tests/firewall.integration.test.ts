@@ -5,7 +5,8 @@ import { ServerConfig } from '../src/config/env.js';
 
 describe('Firewall API Integration Tests (Phase 7)', () => {
   let appServer: AppServer;
-  const testPort = 3095;
+  const testPort = 3108;
+
 
   const testConfig: ServerConfig = {
     host: '127.0.0.1',

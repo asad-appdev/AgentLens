@@ -33,11 +33,17 @@ export interface NettopServiceOptions {
 }
 
 const KNOWN_AI_PROCESS_PATTERNS: Array<{ pattern: RegExp; name: string }> = [
+  { pattern: /antigravity/i, name: 'Google Antigravity' },
+  { pattern: /antigravi/i, name: 'Google Antigravity' },
+  { pattern: /language_server/i, name: 'Google Antigravity' },
+  { pattern: /agy/i, name: 'Google Antigravity' },
+  { pattern: /cursor/i, name: 'Cursor' },
+  { pattern: /windsurf/i, name: 'Windsurf' },
+  { pattern: /copilot/i, name: 'GitHub Copilot' },
   { pattern: /ollama/i, name: 'Ollama' },
   { pattern: /lm\s*studio/i, name: 'LM Studio' },
   { pattern: /chatgpt/i, name: 'ChatGPT' },
   { pattern: /claude/i, name: 'Claude' },
-  { pattern: /cursor/i, name: 'Cursor' },
   { pattern: /localai/i, name: 'LocalAI' },
   { pattern: /vllm/i, name: 'vLLM' },
   { pattern: /embeddings-serv/i, name: 'Embeddings Service' },

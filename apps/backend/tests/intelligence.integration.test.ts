@@ -5,7 +5,8 @@ import { ServerConfig } from '../src/config/env.js';
 
 describe('Intelligence & Settings API Integration Tests (Phase 9)', () => {
   let appServer: AppServer;
-  const testPort = 3098;
+  const testPort = 3101;
+
 
   const testConfig: ServerConfig = {
     host: '127.0.0.1',

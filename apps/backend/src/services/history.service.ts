@@ -28,9 +28,16 @@ export interface HistoryQueryOptions {
 export class HistoryService {
   private readonly dbService: DatabaseService;
   private isRecording = true;
+  private statusCache: { status: HistoryStatus; cachedAt: number } | null = null;
+  private summaryCache: { key: string; summary: HistorySummary; cachedAt: number } | null = null;
 
   constructor(dbService: DatabaseService = databaseService) {
     this.dbService = dbService;
+  }
+
+  public invalidateCaches(): void {
+    this.statusCache = null;
+    this.summaryCache = null;
   }
 
   public isRecordingEnabled(): boolean {
@@ -512,6 +519,12 @@ export class HistoryService {
    * Calculates high-level history analytics summary for a given time window.
    */
   public getHistorySummary(fromMs: number, toMs: number): HistorySummary {
+    const now = Date.now();
+    const cacheKey = `${fromMs}-${toMs}`;
+    if (this.summaryCache && this.summaryCache.key === cacheKey && now - this.summaryCache.cachedAt < 3000) {
+      return this.summaryCache.summary;
+    }
+
     const db = this.dbService.getDatabase();
     const defaultSummary: HistorySummary = {
       from: new Date(fromMs).toISOString(),
@@ -552,7 +565,7 @@ export class HistoryService {
     const topProcesses = this.getTopProcesses(fromMs, toMs, 5, false);
     const topAiAgents = this.getTopProcesses(fromMs, toMs, 5, true);
 
-    return {
+    const result: HistorySummary = {
       from: new Date(fromMs).toISOString(),
       to: new Date(toMs).toISOString(),
       totalDownloaded: trafficRow?.total_in || 0,
@@ -566,12 +579,20 @@ export class HistoryService {
       uniqueRemoteIps: uniqueIpsRow?.ip_cnt || 0,
       totalRecordedConnections: uniqueIpsRow?.conn_cnt || 0,
     };
+
+    this.summaryCache = { key: cacheKey, summary: result, cachedAt: now };
+    return result;
   }
 
   /**
    * Returns current operational status of the history subsystem.
    */
   public getStatus(): HistoryStatus {
+    const now = Date.now();
+    if (this.statusCache && now - this.statusCache.cachedAt < 3000) {
+      return this.statusCache.status;
+    }
+
     const isAvail = this.dbService.isAvailable();
     const db = this.dbService.getDatabase();
     const dbSizeBytes = this.dbService.getDatabaseSizeBytes();
@@ -594,10 +615,11 @@ export class HistoryService {
       const connCount = (db.prepare('SELECT COUNT(*) as c FROM connection_history').get() as any)?.c || 0;
       const trafficCount = (db.prepare('SELECT COUNT(*) as c FROM traffic_history').get() as any)?.c || 0;
 
-      const oldest = (db.prepare('SELECT MIN(timestamp) as t FROM connection_history').get() as any)?.t;
-      const newest = (db.prepare('SELECT MAX(timestamp) as t FROM connection_history').get() as any)?.t;
+      // Fast O(1) indexed lookup via primary key instead of unindexed table scan
+      const oldest = (db.prepare('SELECT timestamp FROM connection_history ORDER BY id ASC LIMIT 1').get() as any)?.timestamp;
+      const newest = (db.prepare('SELECT timestamp FROM connection_history ORDER BY id DESC LIMIT 1').get() as any)?.timestamp;
 
-      return {
+      const result: HistoryStatus = {
         isAvailable: true,
         isRecording: this.isRecording,
         databaseSizeBytes: dbSizeBytes,
@@ -609,6 +631,9 @@ export class HistoryService {
         oldestRecordTimestamp: oldest || undefined,
         newestRecordTimestamp: newest || undefined,
       };
+
+      this.statusCache = { status: result, cachedAt: now };
+      return result;
     } catch {
       return {
         isAvailable: true,
@@ -632,6 +657,7 @@ export class HistoryService {
     if (!db) return { success: false, deletedCount: 0 };
 
     try {
+      this.invalidateCaches();
       let deleted = 0;
       if (olderThanMs !== undefined) {
         const d1 = db.prepare('DELETE FROM process_history WHERE created_at < ?').run(olderThanMs);

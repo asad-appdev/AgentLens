@@ -5,7 +5,8 @@ import { ServerConfig } from '../src/config/env.js';
 
 describe('Local AI Analyst API Integration Tests (Phase 12)', () => {
   let appServer: AppServer;
-  const testPort = 3097;
+  const testPort = 3106;
+
 
   const testConfig: ServerConfig = {
     host: '127.0.0.1',

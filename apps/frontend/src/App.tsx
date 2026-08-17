@@ -104,6 +104,8 @@ export const App: React.FC = () => {
   const [securityInvestigatorModalOpen, setSecurityInvestigatorModalOpen] = useState(false);
   const [investigatorTargetId, setInvestigatorTargetId] = useState<string | null>(null);
 
+  const isSecurityTab = activeTab === 'ALERTS' || activeTab === 'TIMELINE' || activeTab === 'SENSITIVE_FILES';
+
   const {
     alerts: securityAlerts,
     timelineEvents: securityTimelineEvents,
@@ -112,7 +114,7 @@ export const App: React.FC = () => {
     refresh: refreshSecurity,
     dismissAlert: dismissSecurityAlertItem,
     clearHistory: clearSecurityHistoryData,
-  } = useSecurity(3000);
+  } = useSecurity(isSecurityTab ? 3000 : 10000);
 
   const {
     status: wsStatus,
@@ -164,7 +166,7 @@ export const App: React.FC = () => {
     clearHistory,
     refreshHistory,
     isLoading: isLoadingHistory,
-  } = useHistory();
+  } = useHistory(activeTab === 'HISTORY' ? 3000 : 0);
 
   const {
     settings,
@@ -226,7 +228,7 @@ export const App: React.FC = () => {
     isLoading: isLoadingLocalServers,
     fetchServers: refreshLocalServers,
     killProcesses,
-  } = useLocalServers(3000);
+  } = useLocalServers(activeTab === 'SERVERS' ? 3000 : 8000);
 
   // Load snapshot via GET /api/connections
   const loadSnapshot = useCallback(async () => {

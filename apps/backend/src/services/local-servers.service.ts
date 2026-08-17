@@ -20,6 +20,10 @@ interface ProcessMeta {
 
 export class LocalServersService {
   private readonly macos: MacOSService;
+  private cachedServers: LocalServerInfo[] = [];
+  private lastCacheTime = 0;
+  private inFlightDiscovery: Promise<LocalServerInfo[]> | null = null;
+  private readonly cacheTtlMs = 2000;
 
   constructor(macos: MacOSService = macosService) {
     this.macos = macos;
@@ -30,6 +34,23 @@ export class LocalServersService {
    * Uses single batch execution of `lsof` and `ps` to prevent subprocess lock contention.
    */
   public async discoverLocalServers(): Promise<LocalServerInfo[]> {
+    const now = Date.now();
+    if (this.cachedServers.length > 0 && now - this.lastCacheTime < this.cacheTtlMs) {
+      return this.cachedServers;
+    }
+
+    if (this.inFlightDiscovery) {
+      return this.inFlightDiscovery;
+    }
+
+    this.inFlightDiscovery = this.executeDiscovery().finally(() => {
+      this.inFlightDiscovery = null;
+    });
+
+    return this.inFlightDiscovery;
+  }
+
+  private async executeDiscovery(): Promise<LocalServerInfo[]> {
     const servers: LocalServerInfo[] = [];
 
     try {
@@ -40,90 +61,124 @@ export class LocalServersService {
       ]);
 
       const lines = lsofResult.trim().split('\n');
-      if (lines.length <= 1) return [];
+      if (lines.length > 1) {
+        const seenKey = new Set<string>();
 
-      const seenKey = new Set<string>();
+        for (let i = 1; i < lines.length; i++) {
+          const line = lines[i]?.trim();
+          if (!line) continue;
 
-      for (let i = 1; i < lines.length; i++) {
-        const line = lines[i]?.trim();
-        if (!line) continue;
+          const parts = line.split(/\s+/);
+          if (parts.length < 8) continue;
 
-        const parts = line.split(/\s+/);
-        if (parts.length < 9) continue;
+          let processName = parts[0] || 'Unknown';
+          let pid = parseInt(parts[1] || '0', 10);
 
-        const processName = parts[0] || 'Unknown';
-        const pid = parseInt(parts[1] || '0', 10);
-        const nameField = parts[parts.length - 2] || parts[parts.length - 1] || '';
+          // Handle process names containing whitespace by scanning for PID
+          if (isNaN(pid) || pid <= 0) {
+            const pidIdx = parts.findIndex((p, idx) => idx > 0 && /^\d+$/.test(p));
+            if (pidIdx > 0) {
+              pid = parseInt(parts[pidIdx] || '0', 10);
+              processName = parts.slice(0, pidIdx).join(' ');
+            }
+          }
 
-        if (isNaN(pid) || pid <= 0) continue;
+          if (isNaN(pid) || pid <= 0) continue;
 
-        // Parse host:port (e.g. *:3000, 127.0.0.1:5174, [::1]:5173, :::8080)
-        let localAddress = '127.0.0.1';
-        let port = 0;
+          // Find address:port field
+          let nameField = '';
+          for (let j = parts.length - 1; j >= 0; j--) {
+            const token = parts[j];
+            if (token && token.includes(':') && !token.startsWith('0x')) {
+              nameField = token;
+              break;
+            }
+          }
 
-        const lastColon = nameField.lastIndexOf(':');
-        if (lastColon !== -1) {
-          const rawHost = nameField.substring(0, lastColon);
-          const rawPort = nameField.substring(lastColon + 1);
-          port = parseInt(rawPort, 10);
-          localAddress = rawHost === '*' || rawHost === '' ? '0.0.0.0' : rawHost;
+          if (!nameField) continue;
+
+          let localAddress = '127.0.0.1';
+          let port = 0;
+
+          const lastColon = nameField.lastIndexOf(':');
+          if (lastColon !== -1) {
+            const rawHost = nameField.substring(0, lastColon);
+            const rawPort = nameField.substring(lastColon + 1);
+            port = parseInt(rawPort, 10);
+            localAddress = rawHost === '*' || rawHost === '' ? '0.0.0.0' : rawHost;
+          }
+
+          if (isNaN(port) || port <= 0) continue;
+
+          const dedupeKey = `${pid}-${port}`;
+          if (seenKey.has(dedupeKey)) continue;
+          seenKey.add(dedupeKey);
+
+          // 2. Lookup process meta from in-memory map
+          const procMeta = psMap.get(pid);
+          const cmdline = procMeta?.commandLine || '';
+          const ppid = procMeta?.ppid;
+          const parentMeta = ppid ? psMap.get(ppid) : undefined;
+          const parentProcessName = parentMeta ? parentMeta.commandLine.split(' ')[0] : undefined;
+
+          // 3. Classify server framework type
+          const { serverType, isDevServer, confidence, detectionReason } = this.classifyServerType(
+            processName,
+            cmdline,
+            port
+          );
+
+          let isSelf = false;
+          let selfRole: string | undefined = undefined;
+          if (port === 43121 || pid === process.pid) {
+            isSelf = true;
+            selfRole = 'AgentLens (Backend)';
+          } else if (port === 5174 || cmdline.includes('AgentLens/apps/frontend') || cmdline.includes('portScanner/apps/frontend') || cmdline.includes('@network-monitor/frontend')) {
+            isSelf = true;
+            selfRole = 'AgentLens (Frontend)';
+          }
+
+          servers.push({
+            pid,
+            processName,
+            port,
+            localAddress,
+            protocol: 'TCP',
+            state: 'LISTEN',
+            commandLine: cmdline || undefined,
+            ppid: ppid || undefined,
+            parentProcessName,
+            serverType,
+            isDevServer,
+            confidence,
+            detectionReason,
+            isSelf,
+            selfRole,
+            firstSeenAt: new Date().toISOString(),
+          });
         }
-
-        if (isNaN(port) || port <= 0) continue;
-
-        const dedupeKey = `${pid}-${port}`;
-        if (seenKey.has(dedupeKey)) continue;
-        seenKey.add(dedupeKey);
-
-        // 2. Lookup process meta from in-memory map (instant lookup, no child process)
-        const procMeta = psMap.get(pid);
-        const cmdline = procMeta?.commandLine || '';
-        const ppid = procMeta?.ppid;
-        const parentMeta = ppid ? psMap.get(ppid) : undefined;
-        const parentProcessName = parentMeta ? parentMeta.commandLine.split(' ')[0] : undefined;
-
-        // 3. Classify server framework type
-        const { serverType, isDevServer, confidence, detectionReason } = this.classifyServerType(
-          processName,
-          cmdline,
-          port
-        );
-
-        let isSelf = false;
-        let selfRole: string | undefined = undefined;
-        if (port === 43121 || pid === process.pid) {
-          isSelf = true;
-          selfRole = 'AgentLens (Backend)';
-        } else if (port === 5174 || cmdline.includes('AgentLens/apps/frontend') || cmdline.includes('portScanner/apps/frontend') || cmdline.includes('@network-monitor/frontend')) {
-          isSelf = true;
-          selfRole = 'AgentLens (Frontend)';
-        }
-
-        servers.push({
-          pid,
-          processName,
-          port,
-          localAddress,
-          protocol: 'TCP',
-          state: 'LISTEN',
-          commandLine: cmdline || undefined,
-          ppid: ppid || undefined,
-          parentProcessName,
-          serverType,
-          isDevServer,
-          confidence,
-          detectionReason,
-          isSelf,
-          selfRole,
-          firstSeenAt: new Date().toISOString(),
-        });
       }
     } catch {
-      // Return empty if lsof encounters an issue
+      // If error occurs, fallback to last known good cache if available
+      if (this.cachedServers.length > 0) {
+        return this.cachedServers;
+      }
     }
 
-    // Sort by port ascending
-    return servers.sort((a, b) => a.port - b.port);
+    if (servers.length > 0) {
+      const sorted = servers.sort((a, b) => a.port - b.port);
+      this.cachedServers = sorted;
+      this.lastCacheTime = Date.now();
+      return sorted;
+    }
+
+    // If transient lsof issue returned empty but we have cached servers from the last 15 seconds, return them
+    if (this.cachedServers.length > 0 && Date.now() - this.lastCacheTime < 15000) {
+      return this.cachedServers;
+    }
+
+    this.cachedServers = [];
+    return [];
   }
 
   /**
@@ -257,7 +312,7 @@ export class LocalServersService {
     const map = new Map<number, ProcessMeta>();
     try {
       const { stdout } = await execFileAsync('ps', ['-A', '-o', 'pid=,ppid=,command='], {
-        timeout: 3000,
+        timeout: 6000,
         maxBuffer: 10 * 1024 * 1024,
       });
 
@@ -285,7 +340,7 @@ export class LocalServersService {
   private async getListeningSocketsOutput(): Promise<string> {
     try {
       const { stdout } = await execFileAsync('lsof', ['-iTCP', '-sTCP:LISTEN', '-n', '-P'], {
-        timeout: 3000,
+        timeout: 6000,
         maxBuffer: 10 * 1024 * 1024,
       });
       return stdout;
@@ -299,7 +354,7 @@ export class LocalServersService {
    */
   private async resolvePidFromPort(port: number): Promise<number | null> {
     try {
-      const { stdout } = await execFileAsync('lsof', ['-iTCP:' + port, '-sTCP:LISTEN', '-n', '-P'], { timeout: 3000 });
+      const { stdout } = await execFileAsync('lsof', ['-iTCP:' + port, '-sTCP:LISTEN', '-n', '-P'], { timeout: 6000 });
       const lines = stdout.trim().split('\n');
       if (lines.length <= 1) return null;
       const parts = lines[1]?.split(/\s+/);

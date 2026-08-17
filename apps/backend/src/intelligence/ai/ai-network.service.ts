@@ -17,6 +17,12 @@ export const KNOWN_TRUSTED_DOMAINS: Record<string, { provider: string; category:
   'chatgpt.com': { provider: 'OpenAI', category: 'ai-web' },
   'generativelanguage.googleapis.com': { provider: 'Google', category: 'ai-api' },
   'aiplatform.googleapis.com': { provider: 'Google', category: 'ai-api' },
+  'cloudcode-pa.googleapis.com': { provider: 'Google Antigravity', category: 'ai-api' },
+  'daily-cloudcode-pa.googleapis.com': { provider: 'Google Antigravity', category: 'ai-api' },
+  'cursor.sh': { provider: 'Cursor', category: 'ai-api' },
+  'api2.cursor.sh': { provider: 'Cursor', category: 'ai-api' },
+  'codeium.com': { provider: 'Windsurf', category: 'ai-api' },
+  'api.githubcopilot.com': { provider: 'GitHub Copilot', category: 'ai-api' },
   'github.com': { provider: 'GitHub', category: 'code-repo' },
   'api.github.com': { provider: 'GitHub', category: 'code-repo' },
   'raw.githubusercontent.com': { provider: 'GitHub', category: 'code-repo' },
@@ -119,7 +125,7 @@ export class AiAgentNetworkService {
     const profiles: AiAgentProfile[] = [];
 
     for (const def of definitions) {
-      // Find matching active connections
+      // Find matching active connections and live traffic processes
       const matchingConns = connections.filter((c) => {
         const detected = this.detector.detect(
           c.pid,
@@ -127,11 +133,27 @@ export class AiAgentNetworkService {
           c.command,
           c.localPort !== null ? [c.localPort] : []
         );
-        return detected?.agentId === def.id || c.aiAgentName?.toLowerCase().includes(def.id);
+        return detected?.agentId === def.id ||
+          c.aiAgentName?.toLowerCase().includes(def.id) ||
+          c.aiAgentName?.toLowerCase().includes(def.displayName.toLowerCase());
       });
 
-      const uniquePids = Array.from(new Set(matchingConns.map((c) => c.pid)));
-      const matchingTraffic = trafficList.filter((t) => uniquePids.includes(t.pid));
+      const matchingTraffic = trafficList.filter((t) => {
+        const detected = this.detector.detect(
+          t.pid,
+          t.processName,
+          undefined,
+          []
+        );
+        return detected?.agentId === def.id ||
+          t.aiAgentName?.toLowerCase().includes(def.id) ||
+          t.aiAgentName?.toLowerCase().includes(def.displayName.toLowerCase());
+      });
+
+      const uniquePids = Array.from(new Set([
+        ...matchingConns.map((c) => c.pid),
+        ...matchingTraffic.map((t) => t.pid),
+      ]));
 
       const currentDown = matchingTraffic.reduce((acc, t) => acc + t.bytesInPerSecond, 0);
       const currentUp = matchingTraffic.reduce((acc, t) => acc + t.bytesOutPerSecond, 0);

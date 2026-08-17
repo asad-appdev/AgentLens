@@ -5,7 +5,8 @@ import { ServerConfig } from '../src/config/env.js';
 
 describe('WebSocket Server', () => {
   let appServer: AppServer;
-  const testPort = 3098;
+  const testPort = 3111;
+
 
   const testConfig: ServerConfig = {
     host: '127.0.0.1',

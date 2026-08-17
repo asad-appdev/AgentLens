@@ -264,11 +264,14 @@ export class DatabaseService {
       );
 
       CREATE INDEX IF NOT EXISTS idx_proc_hist_created ON process_history(created_at, pid);
+      CREATE INDEX IF NOT EXISTS idx_proc_hist_created_desc ON process_history(created_at DESC);
       CREATE INDEX IF NOT EXISTS idx_proc_hist_ai ON process_history(is_ai_agent, created_at);
       CREATE INDEX IF NOT EXISTS idx_conn_hist_created ON connection_history(created_at, pid);
+      CREATE INDEX IF NOT EXISTS idx_conn_hist_created_desc ON connection_history(created_at DESC);
       CREATE INDEX IF NOT EXISTS idx_conn_hist_remote ON connection_history(remote_address, created_at);
       CREATE INDEX IF NOT EXISTS idx_conn_hist_ai ON connection_history(is_ai_agent, created_at);
       CREATE INDEX IF NOT EXISTS idx_traffic_hist_created ON traffic_history(created_at, pid);
+      CREATE INDEX IF NOT EXISTS idx_traffic_hist_created_desc ON traffic_history(created_at DESC);
       CREATE INDEX IF NOT EXISTS idx_traffic_hist_ai ON traffic_history(is_ai_agent, created_at);
       CREATE INDEX IF NOT EXISTS idx_fw_events_created ON firewall_events(created_at);
       CREATE INDEX IF NOT EXISTS idx_sec_events_created ON security_events(created_at, agent_id);

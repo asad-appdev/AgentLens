@@ -12,12 +12,34 @@ import { WindowsNetworkProvider } from './windows-network.provider.js';
 import type { RawProcessInfo } from '../interfaces/process-provider.interface.js';
 
 export class WindowsServerDetector implements IPlatformServerDetector {
+  private cachedServers: LocalServerInfo[] = [];
+  private lastCacheTime = 0;
+  private inFlightDiscovery: Promise<LocalServerInfo[]> | null = null;
+  private readonly cacheTtlMs = 2000;
+
   constructor(
     private readonly networkProvider: WindowsNetworkProvider,
     private readonly processProvider: WindowsProcessProvider
   ) {}
 
   public async discoverLocalServers(): Promise<LocalServerInfo[]> {
+    const now = Date.now();
+    if (this.cachedServers.length > 0 && now - this.lastCacheTime < this.cacheTtlMs) {
+      return this.cachedServers;
+    }
+
+    if (this.inFlightDiscovery) {
+      return this.inFlightDiscovery;
+    }
+
+    this.inFlightDiscovery = this.executeDiscovery().finally(() => {
+      this.inFlightDiscovery = null;
+    });
+
+    return this.inFlightDiscovery;
+  }
+
+  private async executeDiscovery(): Promise<LocalServerInfo[]> {
     const servers: LocalServerInfo[] = [];
 
     try {
@@ -81,10 +103,24 @@ export class WindowsServerDetector implements IPlatformServerDetector {
         });
       }
     } catch {
-      // Non-fatal error handling
+      if (this.cachedServers.length > 0) {
+        return this.cachedServers;
+      }
     }
 
-    return servers.sort((a, b) => a.port - b.port);
+    if (servers.length > 0) {
+      const sorted = servers.sort((a, b) => a.port - b.port);
+      this.cachedServers = sorted;
+      this.lastCacheTime = Date.now();
+      return sorted;
+    }
+
+    if (this.cachedServers.length > 0 && Date.now() - this.lastCacheTime < 15000) {
+      return this.cachedServers;
+    }
+
+    this.cachedServers = [];
+    return [];
   }
 
   public async killPort(req: KillPortRequest): Promise<KillPortResult> {

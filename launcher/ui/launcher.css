@@ -163,6 +163,25 @@ body {
   animation: pulse-dot 1s infinite;
 }
 
+.global-status-pill.stopping {
+  background: rgba(244, 63, 94, 0.12);
+  border-color: rgba(244, 63, 94, 0.3);
+  color: #fb7185;
+}
+.global-status-pill.stopping .status-dot {
+  background: #f43f5e;
+  animation: pulse-dot 1s infinite;
+}
+
+.global-status-pill.partial {
+  background: rgba(245, 158, 11, 0.12);
+  border-color: rgba(245, 158, 11, 0.3);
+  color: #fbbf24;
+}
+.global-status-pill.partial .status-dot {
+  background: #f59e0b;
+}
+
 .global-status-pill.error {
   background: rgba(244, 63, 94, 0.12);
   border-color: rgba(244, 63, 94, 0.3);

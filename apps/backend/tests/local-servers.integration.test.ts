@@ -5,7 +5,8 @@ import { ServerConfig } from '../src/config/env.js';
 
 describe('Local Servers & Port Cleanup API Integration Tests', () => {
   let appServer: AppServer;
-  const testPort = 3097;
+  const testPort = 3103;
+
 
   const testConfig: ServerConfig = {
     host: '127.0.0.1',

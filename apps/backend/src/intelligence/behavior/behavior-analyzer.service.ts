@@ -15,14 +15,26 @@ export class BehaviorAnalyzerService {
     this.history = history;
   }
 
+  private baselineCache: { baseline: HistoricalBaseline; cachedAt: number } | null = null;
+  private readonly baselineCacheTtlMs = 15000; // 15s cache
+
   /**
    * Computes baseline statistics for an entity (process or agent).
    */
   public async getBaseline(entityId: string, entityType: 'agent' | 'process' = 'process'): Promise<HistoricalBaseline> {
-    const summary = this.history.getHistorySummary(Date.now() - 7 * 24 * 3600 * 1000, Date.now());
+    const now = Date.now();
+    if (this.baselineCache && now - this.baselineCache.cachedAt < this.baselineCacheTtlMs) {
+      return {
+        ...this.baselineCache.baseline,
+        entityId,
+        entityType,
+      };
+    }
+
+    const summary = this.history.getHistorySummary(now - 7 * 24 * 3600 * 1000, now);
     const isAvailable = summary.totalRecordedConnections > 10;
 
-    return {
+    const base: HistoricalBaseline = {
       entityId,
       entityType,
       typicalConnectionCount: Math.max(1, Math.round(summary.totalRecordedConnections / 20)),
@@ -35,6 +47,9 @@ export class BehaviorAnalyzerService {
       lastUpdated: new Date().toISOString(),
       isAvailable,
     };
+
+    this.baselineCache = { baseline: base, cachedAt: now };
+    return base;
   }
 
   /**
@@ -44,18 +59,21 @@ export class BehaviorAnalyzerService {
     const networkProvider = platformService.getNetworkProvider();
     const trafficProvider = platformService.getTrafficProvider();
 
-    const connections = await networkProvider.getConnections();
-    const trafficSnapshot = await trafficProvider.sampleTraffic();
+    const [connections, trafficSnapshot, sharedBaseline] = await Promise.all([
+      networkProvider.getConnections(),
+      trafficProvider.sampleTraffic(),
+      this.getBaseline('system', 'process'),
+    ]);
+
     const trafficList = trafficSnapshot.processes || [];
     const indicators: BehaviorIndicator[] = [];
+    const baselineRate = sharedBaseline.typicalDownloadRate + sharedBaseline.typicalUploadRate;
 
     for (const t of trafficList) {
-      const baseline = await this.getBaseline(t.processName, 'process');
       const currentRate = t.bytesInPerSecond + t.bytesOutPerSecond;
-      const baselineRate = baseline.typicalDownloadRate + baseline.typicalUploadRate;
 
       // 1. High Throughput relative to baseline
-      if (baseline.isAvailable && baselineRate > 0 && currentRate > baselineRate * 3 && currentRate > 1024 * 1024) {
+      if (sharedBaseline.isAvailable && baselineRate > 0 && currentRate > baselineRate * 3 && currentRate > 1024 * 1024) {
         const multiplier = parseFloat((currentRate / baselineRate).toFixed(1));
         indicators.push({
           id: `ind-traffic-${t.pid}-${Date.now()}`,
@@ -82,7 +100,7 @@ export class BehaviorAnalyzerService {
           label: `High Socket Count (${procConns.length})`,
           explanation: `Process is maintaining ${procConns.length} concurrent open sockets.`,
           currentValue: `${procConns.length} sockets`,
-          baselineValue: `${baseline.typicalConnectionCount} sockets`,
+          baselineValue: `${sharedBaseline.typicalConnectionCount} sockets`,
           timestamp: new Date().toISOString(),
         });
       }

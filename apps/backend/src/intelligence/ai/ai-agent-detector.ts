@@ -70,9 +70,9 @@ export class AiAgentDetector {
       // Calculate quantitative confidence score (0.0 to 1.0)
       let confidenceScore = 0.5;
 
-      // Generic runtimes MUST have secondary evidence (command line, port, or exe path)
-      if (isGenericProc && sources.length === 1 && sources[0] === 'process-name') {
-        return null; // Reject generic node/python process without agent command line
+      // Generic runtimes MUST have secondary evidence (command line or distinctive executable/parent)
+      if (isGenericProc && sources.length === 1 && (sources[0] === 'process-name' || sources[0] === 'known-port')) {
+        return null; // Reject generic node/python process without agent-specific command line
       }
 
       const sourcesList: AiDetectionSourceType[] = [...sources];

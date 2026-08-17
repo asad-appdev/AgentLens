@@ -132,8 +132,12 @@ export class MacProcessProvider implements IPlatformProcessProvider {
     for (const pid of activePids) {
       if (!visited.has(pid)) {
         let curr = pid;
+        const seenAncestors = new Set<number>([curr]);
         while (procMap.has(curr) && procMap.get(curr)!.ppid > 1 && procMap.has(procMap.get(curr)!.ppid)) {
-          curr = procMap.get(curr)!.ppid;
+          const nextPpid = procMap.get(curr)!.ppid;
+          if (seenAncestors.has(nextPpid)) break;
+          seenAncestors.add(nextPpid);
+          curr = nextPpid;
         }
 
         if (!visited.has(curr)) {

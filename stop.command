@@ -31,42 +31,88 @@ echo "  Stopping AgentLens                                      "
 echo "=========================================================="
 echo -e "${RESET}"
 
-if [[ ! -f "$PID_FILE" ]]; then
-  echo -e "${YELLOW}No active AgentLens PID file found.${RESET}"
-  log_msg "No active PID file found."
-  exit 0
+BACKEND_PORT=43121
+if [[ -f ".env" ]] && grep -q "^PORT=" .env; then
+  BACKEND_PORT=$(grep "^PORT=" .env | cut -d '=' -f2 | tr -d ' "\r')
+fi
+FRONTEND_PORT=5174
+if [[ -f ".env" ]] && grep -q "^FRONTEND_PORT=" .env; then
+  FRONTEND_PORT=$(grep "^FRONTEND_PORT=" .env | cut -d '=' -f2 | tr -d ' "\r')
 fi
 
-# Read stored PIDs
-BACKEND_PID=$(grep "^BACKEND_PID=" "$PID_FILE" | cut -d '=' -f2)
-FRONTEND_PID=$(grep "^FRONTEND_PID=" "$PID_FILE" | cut -d '=' -f2)
+my_pid=$$
+
+kill_recursive() {
+  local parent=$1
+  [ -z "$parent" ] || [ "$parent" -le 1 ] || [ "$parent" -eq "$my_pid" ] && return
+  local children
+  children=$(pgrep -P "$parent" 2>/dev/null || true)
+  for child in $children; do
+    kill_recursive "$child"
+  done
+  kill -15 "$parent" 2>/dev/null || true
+  kill -9 "$parent" 2>/dev/null || true
+}
+
+kill_port() {
+  local port=$1
+  local pids
+  pids=$(lsof -ti :"$port" -sTCP:LISTEN 2>/dev/null || true)
+  for pid in $pids; do
+    if [ -n "$pid" ] && [ "$pid" -gt 1 ] && [ "$pid" -ne "$my_pid" ]; then
+      local ppid
+      ppid=$(ps -o ppid= -p "$pid" 2>/dev/null | tr -d ' ' || true)
+      if [ -n "$ppid" ] && [ "$ppid" -gt 1 ] && [ "$ppid" -ne "$my_pid" ]; then
+        local gppid
+        gppid=$(ps -o ppid= -p "$ppid" 2>/dev/null | tr -d ' ' || true)
+        if [ -n "$gppid" ] && [ "$gppid" -gt 1 ] && [ "$gppid" -ne "$my_pid" ]; then
+          kill_recursive "$gppid"
+        fi
+        kill_recursive "$ppid"
+      fi
+      kill_recursive "$pid"
+    fi
+  done
+}
 
 stopped_any=false
 
-if [[ -n "$FRONTEND_PID" ]] && kill -0 "$FRONTEND_PID" 2>/dev/null; then
-  echo -n "Stopping Frontend process (PID $FRONTEND_PID)... "
-  pkill -P "$FRONTEND_PID" 2>/dev/null || true
-  kill "$FRONTEND_PID" 2>/dev/null || true
-  echo -e "${GREEN}✓ Stopped${RESET}"
-  log_msg "Stopped Frontend PID $FRONTEND_PID"
-  stopped_any=true
+if [[ -f "$PID_FILE" ]]; then
+  BACKEND_PID=$(grep "^BACKEND_PID=" "$PID_FILE" | cut -d '=' -f2)
+  FRONTEND_PID=$(grep "^FRONTEND_PID=" "$PID_FILE" | cut -d '=' -f2)
+
+  if [[ -n "$FRONTEND_PID" ]] && kill -0 "$FRONTEND_PID" 2>/dev/null; then
+    echo -n "Stopping Frontend process tree (PID $FRONTEND_PID)... "
+    kill_recursive "$FRONTEND_PID"
+    echo -e "${GREEN}✓ Stopped${RESET}"
+    log_msg "Stopped Frontend PID $FRONTEND_PID"
+    stopped_any=true
+  fi
+
+  if [[ -n "$BACKEND_PID" ]] && kill -0 "$BACKEND_PID" 2>/dev/null; then
+    echo -n "Stopping Backend process tree (PID $BACKEND_PID)... "
+    kill_recursive "$BACKEND_PID"
+    echo -e "${GREEN}✓ Stopped${RESET}"
+    log_msg "Stopped Backend PID $BACKEND_PID"
+    stopped_any=true
+  fi
+
+  rm -f "$PID_FILE" 2>/dev/null || true
 fi
 
-if [[ -n "$BACKEND_PID" ]] && kill -0 "$BACKEND_PID" 2>/dev/null; then
-  echo -n "Stopping Backend process (PID $BACKEND_PID)... "
-  pkill -P "$BACKEND_PID" 2>/dev/null || true
-  kill "$BACKEND_PID" 2>/dev/null || true
-  echo -e "${GREEN}✓ Stopped${RESET}"
-  log_msg "Stopped Backend PID $BACKEND_PID"
-  stopped_any=true
-fi
+# Clean up any listening processes on configured ports
+echo -n "Releasing ports (:$BACKEND_PORT, :$FRONTEND_PORT)... "
+kill_port "$BACKEND_PORT"
+kill_port "$FRONTEND_PORT"
+echo -e "${GREEN}✓ Freed${RESET}"
 
-rm -f "$PID_FILE" 2>/dev/null || true
+# Clean up lingering workspace processes
+ps -eo pid,ppid,command 2>/dev/null | grep "$PROJECT_ROOT" | grep -E "tsx|vite|node_modules" | grep -v grep | awk '{print $1}' | while read -r p; do
+  if [ -n "$p" ] && [ "$p" -gt 1 ] && [ "$p" -ne "$my_pid" ]; then
+    kill_recursive "$p"
+  fi
+done
 
 echo ""
-if [[ "$stopped_any" == true ]]; then
-  echo -e "${GREEN}${BOLD}✓ Network Monitor stopped cleanly.${RESET}"
-else
-  echo -e "${YELLOW}Services were already stopped.${RESET}"
-fi
+echo -e "${GREEN}${BOLD}✓ AgentLens services stopped cleanly.${RESET}"
 echo ""

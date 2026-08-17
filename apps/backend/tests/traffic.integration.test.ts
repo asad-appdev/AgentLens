@@ -6,7 +6,8 @@ import { macosService } from '../src/services/macos.service.js';
 
 describe('GET /api/traffic (Integration Test)', () => {
   let appServer: AppServer;
-  const testPort = 3096;
+  const testPort = 3110;
+
 
   const testConfig: ServerConfig = {
     host: '127.0.0.1',

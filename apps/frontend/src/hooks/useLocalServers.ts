@@ -24,7 +24,9 @@ export function useLocalServers(pollIntervalMs = 3000): UseLocalServersReturn {
       const res = await fetch('/api/local-servers');
       if (res.ok) {
         const data = await res.json();
-        setServers(data.servers || []);
+        if (Array.isArray(data.servers)) {
+          setServers(data.servers);
+        }
         setError(null);
       } else {
         const err = await res.json().catch(() => ({ error: 'Failed to fetch servers' }));
@@ -40,8 +42,10 @@ export function useLocalServers(pollIntervalMs = 3000): UseLocalServersReturn {
   useEffect(() => {
     setIsLoading(true);
     fetchServers();
-    const interval = setInterval(fetchServers, pollIntervalMs);
-    return () => clearInterval(interval);
+    if (pollIntervalMs > 0) {
+      const interval = setInterval(fetchServers, pollIntervalMs);
+      return () => clearInterval(interval);
+    }
   }, [fetchServers, pollIntervalMs]);
 
   const killPort = async (port: number, signal: 'SIGTERM' | 'SIGKILL' = 'SIGTERM'): Promise<KillPortResult | null> => {

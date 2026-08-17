@@ -117,7 +117,10 @@ export class AgentProcessTreeService {
       this.knownSessionChildren.set(agentId, knownSet);
     }
 
+    const visitedPids = new Set<number>();
+
     const buildSubtree = (currentPid: number, parentName?: string, parentPid?: number): ProcessNode => {
+      visitedPids.add(currentPid);
       allPids.push(currentPid);
       const info = procMap.get(currentPid) || { pid: currentPid, ppid: parentPid || 0, name: 'unknown', cmd: '' };
       const procNameLower = info.name.toLowerCase();
@@ -168,7 +171,7 @@ export class AgentProcessTreeService {
         knownSet!.add(procNameLower);
       }
 
-      const childPids = childrenMap.get(currentPid) || [];
+      const childPids = (childrenMap.get(currentPid) || []).filter((cPid) => !visitedPids.has(cPid));
       const childrenNodes = childPids.map((cPid) => buildSubtree(cPid, info.name, currentPid));
 
       return {

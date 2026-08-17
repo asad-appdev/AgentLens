@@ -5,7 +5,8 @@ import { ServerConfig } from '../src/config/env.js';
 
 describe('Windows & Cross-Platform API Integration Tests', () => {
   let appServer: AppServer;
-  const testPort = 3095;
+  const testPort = 3105;
+
 
   const testConfig: ServerConfig = {
     host: '127.0.0.1',

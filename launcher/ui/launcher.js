@@ -191,6 +191,8 @@
     });
   }
 
+  let actionTimeout = null;
+
   function startApp() {
     state.isStarting = true;
     updateGlobalStatus('starting', 'Starting AgentLens...');
@@ -204,13 +206,24 @@
       frontendPort: parseInt(el.setFrontendPort.value, 10),
       autoOpen: el.setAutoOpen.value === 'true'
     });
+
+    clearTimeout(actionTimeout);
+    actionTimeout = setTimeout(() => {
+      sendNative('checkStatus');
+    }, 10000);
   }
 
   function stopApp() {
+    state.isStarting = false;
     updateGlobalStatus('stopping', 'Stopping services...');
     el.btnStartStop.disabled = true;
-    appendLog('system', 'Stopping all active processes...');
+    appendLog('system', 'Stopping all active processes and freeing ports...');
     sendNative('stopServers');
+
+    clearTimeout(actionTimeout);
+    actionTimeout = setTimeout(() => {
+      sendNative('checkStatus');
+    }, 2500);
   }
 
   function restartApp() {
@@ -251,7 +264,7 @@
     el.globalStatusPill.className = 'global-status-pill ' + status;
     el.globalStatusText.innerText = label;
 
-    if (status === 'running') {
+    if (status === 'running' || status === 'partial') {
       state.isRunning = true;
       state.isStarting = false;
       el.btnStartStop.disabled = false;
@@ -369,7 +382,7 @@
     if (data.backendRunning) {
       el.cardBackend.className = 'service-card running';
       el.backendState.innerHTML = '<span class="indicator-dot"></span><span class="indicator-text">Online</span>';
-      el.backendPid.innerText = data.backendPid || '—';
+      el.backendPid.innerText = data.backendPid || 'Active';
       el.backendHealth.innerHTML = '<span class="badge-pass">✓ HTTP 200 OK</span>';
     } else {
       el.cardBackend.className = 'service-card';
@@ -382,7 +395,7 @@
     if (data.frontendRunning) {
       el.cardFrontend.className = 'service-card running';
       el.frontendState.innerHTML = '<span class="indicator-dot"></span><span class="indicator-text">Online</span>';
-      el.frontendPid.innerText = data.frontendPid || '—';
+      el.frontendPid.innerText = data.frontendPid || 'Active';
       el.frontendHealth.innerHTML = '<span class="badge-pass">✓ Ready</span>';
     } else {
       el.cardFrontend.className = 'service-card';
@@ -399,6 +412,9 @@
       updateGlobalStatus('running', 'Running');
     } else if (!data.backendRunning && !data.frontendRunning) {
       updateGlobalStatus('stopped', 'Stopped');
+    } else {
+      const which = data.backendRunning ? 'Backend Only' : 'Frontend Only';
+      updateGlobalStatus('partial', `Running (${which})`);
     }
   };
 
